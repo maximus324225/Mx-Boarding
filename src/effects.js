@@ -16,6 +16,79 @@ function softDotTexture() {
   return tex;
 }
 
+// Spur im Schnee hinter dem Board (Band aus Vierecken, knapp über dem Boden)
+class SnowTrail {
+  constructor(scene) {
+    this.max = 900;
+    this.pos = new Float32Array(this.max * 2 * 3);
+    this.count = 0;
+    const idx = [];
+    for (let i = 0; i < this.max - 1; i++) {
+      const a = i * 2;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+    const geo = new THREE.BufferGeometry();
+    this.attr = new THREE.BufferAttribute(this.pos, 3);
+    this.attr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('position', this.attr);
+    geo.setIndex(idx);
+    geo.setDrawRange(0, 0);
+    this.geo = geo;
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      color: 0xb7c6dc, roughness: 1, transparent: true, opacity: 0.5, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide,
+    }));
+    mesh.frustumCulled = false;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    this.mesh = mesh;
+    this.last = null;
+    this.broken = true;
+  }
+
+  push(lx, ly, lz, rx, ry, rz) {
+    if (this.count === this.max) {
+      this.pos.copyWithin(0, 6);
+      this.count--;
+    }
+    this.pos.set([lx, ly, lz, rx, ry, rz], this.count * 6);
+    this.count++;
+    this.geo.setDrawRange(0, Math.max(0, this.count - 1) * 6);
+    this.attr.needsUpdate = true;
+  }
+
+  reset() {
+    this.count = 0;
+    this.geo.setDrawRange(0, 0);
+    this.last = null;
+    this.broken = true;
+  }
+
+  update(player) {
+    if (player.state !== 'ground' || player.speed < 1) {
+      this.broken = true;
+      return;
+    }
+    const p = player.pos;
+    if (this.last && Math.hypot(p.x - this.last.x, p.z - this.last.z) < 0.4) return;
+    const y = p.y + 0.03;
+    if (this.broken) {
+      // Lücke: unsichtbare Verbindung (Breite 0) zum neuen Startpunkt
+      if (this.last) this.push(this.last.x, this.last.y, this.last.z, this.last.x, this.last.y, this.last.z);
+      this.push(p.x, y, p.z, p.x, y, p.z);
+      this.broken = false;
+    }
+    // Breite: schmal beim Carven, breit beim Rutschen/Bremsen
+    const w = 0.13 + player.brakeAmount * 0.45 + (1 - Math.min(1, Math.abs(player.edge) * 2)) * 0.05;
+    player.forwardH(_tf);
+    const sx = -_tf.z * w;
+    const sz = _tf.x * w;
+    this.push(p.x - sx, y, p.z - sz, p.x + sx, y, p.z + sz);
+    this.last = { x: p.x, y, z: p.z };
+  }
+}
+const _tf = new THREE.Vector3();
+
 const _back = new THREE.Vector3();
 const _side = new THREE.Vector3();
 
@@ -39,7 +112,7 @@ export class Effects {
     this.emitAcc = 0;
 
     // --- Fallender Schnee rund um die Kamera ---
-    this.flakeCount = mobile ? 700 : 1600;
+    this.flakeCount = mobile ? 250 : 500; // bei Sonnenschein nur leichtes Schneeglitzern in der Luft
     this.box = { x: 70, y: 35, z: 70 };
     this.flakePos = new Float32Array(this.flakeCount * 3);
     for (let i = 0; i < this.flakeCount; i++) {
@@ -55,6 +128,7 @@ export class Effects {
     this.flakes.frustumCulled = false;
     scene.add(this.flakes);
     this.flakeCenter = new THREE.Vector3();
+    this.trail = new SnowTrail(scene);
     this.time = 0;
   }
 
@@ -76,6 +150,7 @@ export class Effects {
 
   update(dt, camera, player, input) {
     this.time += dt;
+    this.trail.update(player);
 
     // Spray erzeugen, wenn das Board über den Schnee fährt
     if (player.state === 'ground' || player.state === 'crashed') {

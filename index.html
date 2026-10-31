@@ -3,37 +3,48 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#c9d6e6" />
+    <title>MX Boarding</title>
+    <meta name="theme-color" content="#0d1b33" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <title>Powder Run</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Saira:wght@400;600;700;800&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="app"></div>
+    <div id="vignette"></div>
 
     <!-- Anzeige während der Fahrt -->
     <div id="hud" class="hidden">
       <div class="hud-left">
         <div class="speed"><span id="speed">0</span><small>km/h</small></div>
-        <div class="lives" id="lives">●●●</div>
+        <div class="lives" id="lives"></div>
+      </div>
+      <div class="hud-center">
+        <div id="timer" class="timer hidden">0:00</div>
+        <div id="subinfo" class="subinfo hidden"></div>
       </div>
       <div class="hud-right">
-        <div class="score"><span id="score">0</span><small>Punkte</small></div>
-        <div class="best">Rekord <span id="best">0</span></div>
+        <div class="score" id="score-box"><span id="score">0</span><small id="score-unit">Punkte</small></div>
+        <div class="best" id="best-line">Rekord <span id="best">0</span></div>
       </div>
       <div class="hud-buttons">
-        <button id="btn-tilt" class="icon mobile-only" title="Neigungssteuerung">📱</button>
-        <button id="btn-mute" class="icon" title="Ton an/aus">🔊</button>
-        <button id="btn-pause" class="icon" title="Pause">⏸</button>
+        <button id="btn-tilt" class="icon mobile-only" title="Neigungssteuerung" aria-label="Neigungssteuerung">📱</button>
+        <button id="btn-cam" class="icon" title="Ansicht wechseln (C)" aria-label="Ansicht wechseln">🎥</button>
+        <button id="btn-music-hud" class="icon" title="Musik an/aus (M)" aria-label="Musik an/aus">🎵</button>
+        <button id="btn-mute" class="icon" title="Geräusche an/aus" aria-label="Geräusche an/aus">🔊</button>
+        <button id="btn-pause" class="icon" title="Pause (Esc)" aria-label="Pause">⏸</button>
       </div>
     </div>
 
     <div id="popup"></div>
+    <div id="countdown" class="hidden"></div>
 
     <!-- Touch-Steuerung (nur Handy/Tablet) -->
     <div id="touch" class="hidden">
       <div class="touch-left">
-        <button data-act="left" class="tbtn steer">◀</button>
-        <button data-act="right" class="tbtn steer">▶</button>
+        <button data-act="left" class="tbtn steer" aria-label="Links">◀</button>
+        <button data-act="right" class="tbtn steer" aria-label="Rechts">▶</button>
       </div>
       <div class="touch-right">
         <button data-act="brake" class="tbtn small">Bremsen</button>
@@ -42,44 +53,90 @@
       </div>
     </div>
 
-    <!-- Startbildschirm -->
-    <div id="start" class="overlay">
+    <!-- Startbildschirm: im Hintergrund läuft die Show-Fahrt -->
+    <div id="start" class="screen">
+      <div class="logo" aria-label="MX Boarding">
+        <div class="logo-mx">MX</div>
+        <div class="logo-boarding">BOARDING</div>
+        <svg class="logo-swoosh" viewBox="0 0 400 40" aria-hidden="true">
+          <defs>
+            <linearGradient id="sw" x1="0" x2="1">
+              <stop offset="0" stop-color="#45a6ff" stop-opacity="0" />
+              <stop offset="0.35" stop-color="#45a6ff" />
+              <stop offset="1" stop-color="#7a4dff" />
+            </linearGradient>
+          </defs>
+          <path d="M10 30 C 120 8, 260 4, 390 14 L 388 20 C 260 12, 130 18, 10 30 Z" fill="url(#sw)" />
+          <circle cx="372" cy="8" r="2.2" fill="#fff" />
+          <circle cx="384" cy="4" r="1.6" fill="#fff" />
+          <circle cx="360" cy="5" r="1.2" fill="#fff" />
+        </svg>
+      </div>
+
+      <div class="menu-bottom">
+        <div class="modes" id="modes" role="radiogroup" aria-label="Spielmodus"></div>
+        <div class="menu-actions">
+          <button id="btn-start" class="primary">Start</button>
+          <div class="chips">
+            <button id="btn-music" class="chip">🎵 Musik: An</button>
+            <button id="btn-quality" class="chip">Grafik: Hoch</button>
+            <button id="btn-help" class="chip">Steuerung</button>
+          </div>
+        </div>
+      </div>
+      <div id="sound-hint">Tippen oder Taste drücken für Musik</div>
+    </div>
+
+    <!-- Steuerung -->
+    <div id="help" class="overlay hidden">
       <div class="panel">
-        <h1>Powder Run</h1>
-        <p class="sub">Fahr so weit wie möglich den Berg hinunter</p>
+        <h2>Steuerung</h2>
         <div class="controls desktop-only">
-          <div><kbd>←</kbd><kbd>→</kbd> oder <kbd>A</kbd><kbd>D</kbd><span>Lenken / Drehen in der Luft</span></div>
-          <div><kbd>↑</kbd> oder <kbd>W</kbd><span>Hocke (schneller) / Grab in der Luft</span></div>
-          <div><kbd>↓</kbd> oder <kbd>S</kbd><span>Bremsen</span></div>
-          <div><kbd>Leertaste</kbd><span>Halten = aufladen, loslassen = springen</span></div>
-          <div><kbd>Esc</kbd><span>Pause</span></div>
+          <div><span class="keys"><kbd>←</kbd><kbd>→</kbd> <kbd>A</kbd><kbd>D</kbd></span><span>Lenken (Carven gibt Schwung) · in der Luft drehen</span></div>
+          <div><span class="keys"><kbd>↑</kbd> <kbd>W</kbd></span><span>Hocke · in der Luft: Vorwärtssalto</span></div>
+          <div><span class="keys"><kbd>↓</kbd> <kbd>S</kbd></span><span>Bremsen · in der Luft: Rückwärtssalto</span></div>
+          <div><span class="keys"><kbd>Leertaste</kbd></span><span>Halten = aufladen, loslassen = springen</span></div>
+          <div><span class="keys"><kbd>Shift</kbd> <kbd>E</kbd></span><span>Grab in der Luft</span></div>
+          <div><span class="keys"><kbd>C</kbd></span><span>Kamera-Ansicht wechseln</span></div>
+          <div><span class="keys"><kbd>M</kbd></span><span>Musik an/aus</span></div>
+          <div><span class="keys"><kbd>Esc</kbd></span><span>Pause</span></div>
         </div>
         <div class="controls mobile-only">
-          <div><b>◀ ▶</b><span>Lenken / Drehen in der Luft</span></div>
-          <div><b>Sprung</b><span>Halten = aufladen, loslassen = springen</span></div>
-          <div><b>Hocke</b><span>Schneller fahren / Grab in der Luft</span></div>
-          <div><b>📱</b><span>Lenken durch Neigen des Handys</span></div>
-          <p class="hint">Tipp: Handy quer halten</p>
+          <div><span class="keys"><b>◀ ▶</b></span><span>Lenken · in der Luft drehen</span></div>
+          <div><span class="keys"><b>Sprung</b></span><span>Halten = aufladen, loslassen = springen</span></div>
+          <div><span class="keys"><b>Hocke</b></span><span>Schneller · in der Luft: Grab</span></div>
+          <div><span class="keys"><b>Bremsen</b></span><span>Bremsen · in der Luft: Salto</span></div>
+          <div><span class="keys"><b>🎥</b></span><span>Kamera-Ansicht wechseln</span></div>
+          <div><span class="keys"><b>📱</b></span><span>Lenken durch Neigen</span></div>
         </div>
-        <p class="tip">Lande in Fahrtrichtung, sonst stürzt du. Im Snowpark: blaue Stangen markieren Schanzen, über die kleinen Auffahrten kommst du auf Rails und Boxen.</p>
-        <button id="btn-start" class="primary">Los geht's</button>
+        <p class="tip">Lass in der Luft rechtzeitig los: Die Lande-Hilfe dreht Spins und Saltos sauber zu Ende. Über die kleinen Schneeauffahrten kommst du auf Rails und Boxen.</p>
+        <button id="btn-help-close" class="primary">Alles klar</button>
       </div>
     </div>
 
     <div id="pause" class="overlay hidden">
       <div class="panel">
         <h2>Pause</h2>
-        <button id="btn-resume" class="primary">Weiter</button>
+        <div class="stack">
+          <button id="btn-resume" class="primary">Weiter</button>
+          <button id="btn-restart-pause" class="secondary">Neu starten</button>
+          <button id="btn-menu-pause" class="secondary">Hauptmenü</button>
+        </div>
       </div>
     </div>
 
     <div id="gameover" class="overlay hidden">
       <div class="panel">
-        <h2>Lauf beendet</h2>
+        <p class="eyebrow" id="over-mode">Freeride</p>
+        <h2 id="over-title">Lauf beendet</h2>
         <p class="new hidden" id="over-new">Neuer Rekord!</p>
-        <div class="result"><span id="over-score">0</span><small>Punkte</small></div>
+        <div class="result"><span id="over-score">0</span><small id="over-unit">Punkte</small></div>
+        <p class="detail" id="over-detail"></p>
         <p class="sub">Rekord: <span id="over-best">0</span></p>
-        <button id="btn-restart" class="primary">Nochmal</button>
+        <div class="stack">
+          <button id="btn-restart" class="primary">Nochmal</button>
+          <button id="btn-menu-over" class="secondary">Hauptmenü</button>
+        </div>
       </div>
     </div>
 

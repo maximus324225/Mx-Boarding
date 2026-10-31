@@ -64,9 +64,12 @@ export class Player {
     this.noCollide = false;
     this.rail = null;
     this.exitAssist = false;
+    this.flip = 0;
+    this.flipRate = 0;
+    this.flipTotal = 0;
     this.grab = false;
     this.tucking = false;
-    this.pose = { crouch: 0, grab: 0, tuck: 0, brake: 0, edge: 0, airborne: 0, grind: 0, dt: 0 };
+    this.pose = { crouch: 0, grab: 0, tuck: 0, brake: 0, edge: 0, airborne: 0, grind: 0, flip: 0, dt: 0 };
     this.model.handsInit = false;
     this.update(0);
   }
@@ -135,11 +138,26 @@ export class Player {
     const spd = Math.hypot(vf, vl);
     const newVl = vl * Math.exp(-grip * dt);
     const removed = Math.abs(vl - newVl);
-    const lossFactor = braking ? 1.0 : 0.22; // Rutschen kostet Tempo, sauberes Carven kaum
+    const lossFactor = braking ? 1.0 : 0.08; // Rutschen kostet Tempo, sauberes Carven kaum
     const target = spd * (1 - (spd > 0.01 ? (removed / spd) * lossFactor : 0));
     if (Math.abs(vf) > 0.3) this.travelSign = Math.sign(vf);
     const newVf = this.travelSign * Math.sqrt(Math.max(0, target * target - newVl * newVl));
     this.vel.copy(_f).multiplyScalar(newVf).addScaledVector(_r, newVl);
+
+    // Carving-Boost: Wer auf der Kante Kurven fährt, gewinnt etwas Schwung
+    // (wie beim "Pumpen" aus der Kurve heraus).
+    this.carveBoost = 0;
+    if (!braking && sp > 4 && Math.abs(this.edge) > 0.15) {
+      // nur bergab: Anteil der Fahrtrichtung, der in Falllinie zeigt
+      _t.set(0, -G, 0).addScaledVector(n, G * n.y); // Hangabtrieb
+      const slopeAcc = _t.length();
+      const downhill = slopeAcc > 0.01 && sp > 0.01 ? Math.max(0, this.vel.dot(_t) / (slopeAcc * sp)) : 0;
+      this.carveBoost = Math.min(
+        (Math.abs(this.edge) - 0.15) * 7.5 * Math.max(0, 1 - sp / 38),
+        slopeAcc * 0.8,
+      ) * downhill;
+      this.vel.addScaledVector(_f, this.travelSign * this.carveBoost * dt);
+    }
 
     // Anschieben, wenn man fast steht
     const tuck = input.tuck && !braking;
@@ -181,33 +199,59 @@ export class Player {
     this.spin = 0;
     this.maxHeight = 0;
     this.exitAssist = false;
+    this.flip = 0;
+    this.flipRate = 0;
+    this.flipTotal = 0;
   }
 
   airStep(dt, input) {
     this.vel.y -= G * dt;
     const s = this.vel.length();
     this.vel.multiplyScalar(1 - 0.0025 * s * dt);
+    this.airTime += dt;
 
-    // Drehungen in der Luft
+    // Drehungen in der Luft (Spins um die Hochachse)
     const spinRate = -input.steer * 6.5;
     this.heading += spinRate * dt;
     this.spin += spinRate * dt;
-    // Nach einem Boardslide dreht sich das Board von selbst zurück in Fahrtrichtung
-    if (this.exitAssist && Math.abs(input.steer) < 0.15) {
+
+    // Saltos: vorwärts (+1) oder rückwärts (-1)
+    const flipIn = input.flip || 0;
+    if (flipIn !== 0) {
+      this.flipRate += (flipIn * 6.6 - this.flipRate) * Math.min(1, dt * 10);
+    } else {
+      this.flipRate += (0 - this.flipRate) * Math.min(1, dt * 6);
+    }
+    this.flip += this.flipRate * dt;
+    this.flipTotal += this.flipRate * dt;
+
+    // Lande-Hilfe: ohne Eingabe dreht sich der Fahrer zur nächsten sauberen
+    // Landeposition (Board in Fahrtrichtung, Kopf oben). Das macht Landen
+    // deutlich einfacher – Drehungen werden "fertig gedreht".
+    if (Math.abs(input.steer) < 0.15) {
       const velYaw = Math.atan2(-this.vel.x, -this.vel.z);
       let d = wrapAngle(velYaw - this.heading);
       if (Math.abs(d) > Math.PI / 2) d = wrapAngle(d + Math.PI);
-      this.heading += Math.sign(d) * Math.min(Math.abs(d), 7 * dt);
+      const rate = this.exitAssist ? 7 : 4.5;
+      const step = Math.sign(d) * Math.min(Math.abs(d), rate * dt);
+      this.heading += step;
+      this.spin += step;
     }
-    this.airTime += dt;
+    if (flipIn === 0) {
+      const target = Math.round(this.flip / (Math.PI * 2)) * Math.PI * 2;
+      const d = target - this.flip;
+      const step = Math.sign(d) * Math.min(Math.abs(d), 6 * dt);
+      this.flip += step;
+      this.flipTotal += step;
+    }
 
     this.pos.addScaledVector(this.vel, dt);
     const hg = heightAt(this.pos.x, this.pos.z);
     this.maxHeight = Math.max(this.maxHeight, this.pos.y - hg);
     this.edge += (0 - this.edge) * Math.min(1, dt * 4);
-    const targetCrouch = input.tuck ? 1 : 0.35; // Hocke in der Luft = Grab
+    this.grab = input.grab && Math.abs(this.flipRate) < 1;
+    const targetCrouch = this.grab ? 1 : 0.35;
     this.crouch += (targetCrouch - this.crouch) * Math.min(1, dt * 10);
-    this.grab = input.tuck;
     this.tucking = false;
     this.charge = 0;
 
@@ -224,23 +268,40 @@ export class Player {
     this.boardAxes(n);
     const align = hSpeed > 0.01 ? Math.abs(_t.dot(_f)) / hSpeed : 1;
     const spinDeg = Math.round(Math.abs(this.spin) / Math.PI) * 180;
+    const flipErr = Math.abs(wrapAngle(this.flip));
+    const flips = Math.round(Math.abs(this.flipTotal) / (Math.PI * 2));
 
-    if ((hSpeed > 3 && align < Math.cos(THREE.MathUtils.degToRad(40))) || -vn > 17) {
-      this.crash(-vn > 17 ? 'impact' : 'landing');
+    // Großzügige Toleranz: bis 60° schräg und 65° Salto-Abweichung geht noch
+    if (flipErr > 1.15) {
+      this.crash('flip');
       return;
     }
+    if ((hSpeed > 3 && align < Math.cos(THREE.MathUtils.degToRad(60))) || -vn > 22) {
+      this.crash(-vn > 22 ? 'impact' : 'landing');
+      return;
+    }
+    // Board beim Aufsetzen sauber in Fahrtrichtung ausrichten
+    if (hSpeed > 1) {
+      const velYaw = Math.atan2(-_t.x, -_t.z);
+      let d = wrapAngle(velYaw - this.heading);
+      if (Math.abs(d) > Math.PI / 2) d = wrapAngle(d + Math.PI);
+      this.heading += d;
+    }
+    this.flip = 0;
+    this.flipRate = 0;
     this.vel.addScaledVector(n, -vn);
-    this.vel.multiplyScalar(1 - Math.min(0.3, Math.max(0, -vn - 4) * 0.03)); // harte Landung kostet Tempo
+    this.vel.multiplyScalar(1 - Math.min(0.25, Math.max(0, -vn - 6) * 0.025)); // harte Landung kostet Tempo
     this.state = 'ground';
     if (this.airTime > 0.25) {
       this.events.push({
         type: 'land', airTime: this.airTime, spin: spinDeg, grab: !!this.grab,
-        height: this.maxHeight, impact: -vn, clean: align > 0.95,
+        flips, flipDir: Math.sign(this.flipTotal),
+        height: this.maxHeight, impact: -vn, clean: align > 0.95 && flipErr < 0.3,
       });
     }
+    this.boardAxes(n);
     this.travelSign = this.vel.dot(_f) >= 0 ? 1 : -1;
   }
-
 
   // ---------- Rails & Boxen ----------
   checkRails() {
@@ -346,6 +407,9 @@ export class Player {
 
   crash(reason) {
     this.state = 'crashed';
+    this.flip = 0;
+    this.flipRate = 0;
+    this.model.flipG.rotation.x = 0;
     this.crashTimer = 2.2;
     this.vel.multiplyScalar(0.55);
     this.tumble.set((Math.random() - 0.5) * 14, 0, (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 6));
@@ -391,6 +455,7 @@ export class Player {
       const sgn = this.travelSign;
       this.brakeYaw += (this.brakeAmount * 1.2 * sgn - this.brakeYaw) * Math.min(1, dt * 8 || 1);
       yawG.rotation.y = this.brakeYaw;
+      this.model.flipG.rotation.x = -this.flip * this.travelSign;
       leanG.rotation.set(0, 0, -this.edge * sgn);
     }
 
@@ -405,6 +470,7 @@ export class Player {
     P.edge = this.edge;
     P.airborne += ((air ? 1 : 0) - P.airborne) * f;
     P.grind += ((this.state === 'grind' ? 1 : 0) - P.grind) * f;
+    P.flip += ((air && Math.abs(this.flipRate) > 1 ? 1 : 0) - P.flip) * f;
     P.dt = dt;
     poseRider(this.model, P);
   }

@@ -5,33 +5,45 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   heightAt, pisteCenter, PISTE_HALF, CHUNK_LEN, X_RANGE, FINE_RANGE,
-  slotFeatures, slotIndex, featuresNear, railLine, nearFeature, SLOT_START,
+  slotFeatures, slotIndex, featuresNear, railLine, nearFeature, SLOT_START, course,
 } from './terrain.js';
+import { Details, isReserved } from './details.js';
 import { mulberry32, valueNoise } from './noise.js';
 
-const CHUNKS_AHEAD = 6;
+// wie weit voraus Gelände erzeugt wird (wird je nach Grafikstufe angepasst)
+let CHUNKS_AHEAD = 6;
+export function setViewChunks(n) {
+  CHUNKS_AHEAD = n;
+}
 const CHUNKS_BEHIND = 1;
 
 // Spalten des Geländerasters: fein im Pistenbereich, grob außen.
 // Für alle Chunks gleich, damit an den Nahtstellen keine Lücken entstehen.
 const COLS = (() => {
   const xs = [];
-  for (let x = -X_RANGE; x < -FINE_RANGE; x += 5) xs.push(x);
+  for (let x = -X_RANGE; x < -FINE_RANGE; x += 7.5) xs.push(x);
   for (let x = -FINE_RANGE; x < FINE_RANGE; x += 1.5) xs.push(x);
-  for (let x = FINE_RANGE; x <= X_RANGE; x += 5) xs.push(x);
+  for (let x = FINE_RANGE; x <= X_RANGE; x += 7.5) xs.push(x);
   return xs;
 })();
 
 function makeTreeGeometry() {
   const parts = [];
   const layers = [
-    { r: 1.9, h: 3.0, y: 2.3 },
-    { r: 1.5, h: 2.7, y: 3.8 },
-    { r: 1.05, h: 2.3, y: 5.2 },
-    { r: 0.55, h: 1.6, y: 6.5 },
+    { r: 2.0, h: 2.7, y: 2.1 },
+    { r: 1.6, h: 2.5, y: 3.4 },
+    { r: 1.2, h: 2.2, y: 4.6 },
+    { r: 0.8, h: 1.9, y: 5.7 },
+    { r: 0.45, h: 1.5, y: 6.7 },
   ];
   for (const l of layers) {
-    const g = new THREE.ConeGeometry(l.r, l.h, 7, 1);
+    const g = new THREE.ConeGeometry(l.r, l.h, 8, 1, true);
+    // Äste hängen außen leicht nach unten
+    const lp = g.attributes.position;
+    for (let v = 0; v < lp.count; v++) {
+      const rr = Math.hypot(lp.getX(v), lp.getZ(v));
+      if (rr > l.r * 0.9) lp.setY(v, lp.getY(v) - 0.25);
+    }
     g.translate(0, l.y, 0);
     parts.push(g.toNonIndexed());
   }
@@ -51,10 +63,86 @@ function makeTreeGeometry() {
     }
   }
   foliage.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  foliage.computeVertexNormals();
+  // Normalen der Kegel bleiben erhalten -> weich schattierte Bäume
   const trunk = new THREE.CylinderGeometry(0.14, 0.24, 1.6, 6);
   trunk.translate(0, 0.8, 0);
   return { foliage, trunk };
+}
+
+// Feine Schneestruktur als Normal-Map (kachelbar), damit der Schnee nicht glatt wie Plastik wirkt
+function snowNormalMap() {
+  const N = 256;
+  const h = new Float32Array(N * N);
+  const rnd = mulberry32(99);
+  for (let i = 0; i < N * N; i++) h[i] = rnd();
+  // mehrfach weichzeichnen (mit Umbruch an den Rändern -> nahtlos)
+  const tmp = new Float32Array(N * N);
+  for (let pass = 0; pass < 3; pass++) {
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        let sum = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) sum += h[((y + dy + N) % N) * N + ((x + dx + N) % N)];
+        }
+        tmp[y * N + x] = sum / 9;
+      }
+    }
+    h.set(tmp);
+  }
+  // etwas grobe Struktur (Windgangeln) dazu
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      h[y * N + x] += Math.sin((x / N) * Math.PI * 2 * 3 + Math.sin((y / N) * Math.PI * 2 * 2) * 1.5) * 0.06;
+    }
+  }
+  const c = document.createElement('canvas');
+  c.width = c.height = N;
+  const g = c.getContext('2d');
+  const img = g.createImageData(N, N);
+  const strength = 6;
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const dx = (h[y * N + ((x + 1) % N)] - h[y * N + ((x - 1 + N) % N)]) * strength;
+      const dy = (h[((y + 1) % N) * N + x] - h[((y - 1 + N) % N) * N + x]) * strength;
+      const len = Math.hypot(dx, dy, 1);
+      const i = (y * N + x) * 4;
+      img.data[i] = (-dx / len * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (-dy / len * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (1 / len * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  return t;
+}
+
+// Glitzern im Schnee: winzige Eiskristalle blitzen je nach Blickwinkel auf
+function addSnowSparkle(material) {
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = 'varying vec3 vSparkleW;\n' + shader.vertexShader.replace(
+      '#include <project_vertex>',
+      '#include <project_vertex>\n  vSparkleW = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+    );
+    shader.fragmentShader = 'varying vec3 vSparkleW;\n' + shader.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      `{
+        vec3 sp = vSparkleW * 22.0;
+        vec3 cellP = floor(sp);
+        float h = fract(sin(dot(cellP, vec3(12.9898, 78.233, 45.164))) * 43758.5453);
+        vec2 f = fract(sp.xz) - 0.5;
+        float dotShape = smoothstep(0.22, 0.0, length(f));   // winziger Punkt statt Fläche
+        vec3 V = normalize(cameraPosition - vSparkleW);
+        float tw = fract(h * 91.7 + dot(V, vec3(3.1, 1.7, 2.3)) * 3.0);
+        float d = length(cameraPosition - vSparkleW);
+        float spark = step(0.965, h) * smoothstep(0.85, 1.0, tw) * dotShape * smoothstep(30.0, 3.0, d);
+        outgoingLight += vec3(1.0, 0.98, 0.95) * spark * 4.0;
+      }
+      #include <opaque_fragment>`,
+    );
+  };
 }
 
 function bannerTexture(text) {
@@ -88,11 +176,17 @@ export class World {
     this.mobile = mobile;
     this.chunks = new Map();
 
-    this.snowMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
+    this.snowMat = new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.78, metalness: 0,
+      normalMap: snowNormalMap(), normalScale: new THREE.Vector2(0.28, 0.28),
+      envMapIntensity: 0.35,
+    });
+    addSnowSparkle(this.snowMat);
+    this.details = new Details();
     const tree = makeTreeGeometry();
     this.treeFoliageGeo = tree.foliage;
     this.treeTrunkGeo = tree.trunk;
-    this.foliageMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true });
+    this.foliageMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, envMapIntensity: 0.4 });
     this.trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3426, roughness: 1 });
     this.rockGeo = new THREE.IcosahedronGeometry(1, 0);
     this.rockMat = new THREE.MeshStandardMaterial({ color: 0x5d5f68, roughness: 1, flatShading: true });
@@ -107,11 +201,17 @@ export class World {
     this.postMat = new THREE.MeshStandardMaterial({ color: 0x2b2c36, metalness: 0.5, roughness: 0.5 });
     this.boxSide = new THREE.MeshStandardMaterial({ color: 0x2f6bff, roughness: 0.5 });
     this.boxTop = new THREE.MeshStandardMaterial({ color: 0xe9e9ef, roughness: 0.35 });
-    this.bannerMat = new THREE.MeshStandardMaterial({ map: bannerTexture('POWDER PARK'), roughness: 0.7, side: THREE.DoubleSide });
+    this.bannerMat = new THREE.MeshStandardMaterial({ map: bannerTexture('MX SNOWPARK'), roughness: 0.7, side: THREE.DoubleSide });
   }
 
   chunkIndex(z) {
     return Math.floor(-z / CHUNK_LEN);
+  }
+
+  // Alle Geländestücke entfernen (z. B. beim Wechsel des Spielmodus)
+  reset() {
+    for (const chunk of this.chunks.values()) this.disposeChunk(chunk);
+    this.chunks.clear();
   }
 
   update(playerZ) {
@@ -174,6 +274,7 @@ export class World {
     const positions = new Float32Array(count * 3);
     const normals = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
+    const uvs = new Float32Array(count * 2);
     const n = new THREE.Vector3();
     const col = new THREE.Color();
     const groomed = new THREE.Color(0.97, 0.98, 1.0);
@@ -193,6 +294,8 @@ export class World {
         const dhdz = (hs[j * W + k + 1] - hs[(j + 2) * W + k + 1]) / 2;
         n.set(-dhdx, 1, -dhdz).normalize();
         positions.set([x, h, z], idx * 3);
+        uvs[idx * 2] = x * 0.35;
+        uvs[idx * 2 + 1] = z * 0.35;
         normals.set([n.x, n.y, n.z], idx * 3);
 
         const off = Math.max(0, Math.abs(x - cx) - PISTE_HALF);
@@ -230,6 +333,7 @@ export class World {
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     geo.setIndex(new THREE.BufferAttribute(indices, 1));
     geo.computeBoundingSphere();
     geometries.push(geo);
@@ -251,7 +355,7 @@ export class World {
       const cluster = valueNoise(x * 0.02, z * 0.02, 77);
       const prob = cluster > 0.15 ? 0.7 : 0.05;
       if (rng() > prob) continue;
-      if (nearFeature(x, z)) continue;
+      if (nearFeature(x, z) || isReserved(x, z, i)) continue;
       const y = heightAt(x, z);
       if (rng() < 0.78) {
         const sc = 0.7 + rng() * 0.9;
@@ -280,8 +384,25 @@ export class World {
       _a.set(t.x, t.y - 0.2, t.z);
       _m.compose(_a, _q, _s);
     };
-    addInstanced(this.treeFoliageGeo, this.foliageMat, trees, treeSetter);
-    addInstanced(this.treeTrunkGeo, this.trunkMat, trees, treeSetter);
+    // Bäume in kleine Gruppen (ca. 25 x 70 m) aufteilen: so werden nur die
+    // sichtbaren Gruppen gezeichnet – auch bei der Schattenberechnung.
+    const batches = new Map();
+    for (const t of trees) {
+      const key = `${Math.floor((zStart - t.z) / 25)}:${Math.floor((t.x + X_RANGE) / 70)}`;
+      if (!batches.has(key)) batches.set(key, []);
+      batches.get(key).push(t);
+    }
+    const tc = new THREE.Color();
+    for (const batch of batches.values()) {
+      addInstanced(this.treeFoliageGeo, this.foliageMat, batch, treeSetter);
+      const fol = instanced[instanced.length - 1];
+      batch.forEach((t, idx) => {
+        const v = 0.82 + ((t.rot * 13.7) % 1) * 0.3;
+        fol.setColorAt(idx, tc.setRGB(v * 0.95, v, v * 0.97));
+      });
+      fol.instanceColor.needsUpdate = true;
+      addInstanced(this.treeTrunkGeo, this.trunkMat, batch, treeSetter);
+    }
     addInstanced(this.rockGeo, this.rockMat, rocks, (r) => {
       _q.setFromAxisAngle(UP, r.rot);
       _s.set(r.s, r.s * r.sy, r.s * 1.1);
@@ -318,8 +439,11 @@ export class World {
     }
     addInstanced(this.poleGeo, this.kickPoleMat, kPoles, ([x, z]) => _m.makeTranslation(x, heightAt(x, z) - 0.1, z));
 
+    // Sessellift, Schneekanonen, Hütten, Slalom-Tore
+    this.details.build(this, i, zStart, group, geometries, instanced, obstacles);
+
     // Eingangsbanner des Snowparks
-    if (SLOT_START + 40 <= zStart && SLOT_START + 40 > zStart - CHUNK_LEN) this.buildBanner(SLOT_START + 40, group, geometries);
+    if (course.park && SLOT_START + 40 <= zStart && SLOT_START + 40 > zStart - CHUNK_LEN) this.buildBanner(SLOT_START + 40, group, geometries);
 
     this.scene.add(group);
     return { group, geometries, instanced, obstacles };

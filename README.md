@@ -1,21 +1,34 @@
-# Powder Run – 3D-Snowboard-Spiel für den Browser
+# MX Boarding – 3D-Snowboard-Spiel für den Browser
 
-Realistisches Snowboard-Spiel mit endlosem Berg, Schanzen, Tricks und Steuerung für PC und Handy.
+Snowboarden auf einem Alpenberg mit Snowpark, Saltos, Rails und vier Spielmodi.
+Läuft am PC und auf dem Handy, komplett im Browser.
+
+## Spielmodi
+
+| Modus | Ziel |
+|---|---|
+| **Freeride** | Endlos durch den Snowpark. 3 Leben, Punkte für Meter und Tricks. |
+| **Trick-Attack** | 2 Minuten im Snowpark: so viele Trick-Punkte wie möglich. Stürze kosten nur Zeit. |
+| **Slalom** | 30 Tore bis ins Ziel. Jedes verpasste Tor: +3 Strafsekunden. |
+| **Freies Fahren** | Ohne Leben, ohne Zeitdruck – einfach fahren und üben. |
+
+Rekorde werden pro Modus im Browser gespeichert.
 
 ## Steuerung
 
 | PC | Handy | Aktion |
 |---|---|---|
-| ← → oder A D | ◀ ▶ oder Handy neigen (📱) | Lenken / in der Luft drehen |
-| ↑ oder W | Hocke | Schneller fahren / Grab in der Luft |
-| ↓ oder S | Bremsen | Bremsen (Board querstellen) |
+| ← → oder A D | ◀ ▶ oder Handy neigen (📱) | Lenken (Carven gibt Schwung) / in der Luft drehen |
+| ↑ oder W | Hocke | Hocke · in der Luft: Vorwärtssalto (PC) bzw. Grab (Handy) |
+| ↓ oder S | Bremsen | Bremsen · in der Luft: Rückwärtssalto |
 | Leertaste halten + loslassen | Sprung halten + loslassen | Sprung (länger halten = höher) |
+| Shift oder E | – | Grab in der Luft |
+| C | 🎥 | Kamera: hinten, nah, vorne, seitlich, von oben |
+| M | 🎵 | Musik an/aus |
 | Esc / P | ⏸ | Pause |
 
-**Snowpark:** Schanzen (bis über 5 m Flughöhe), Tables, Wellenbahnen, Rails und Boxen zum Grinden.
-
-**Regeln:** 3 Leben. Bäume, Felsen und Landungen quer zur Fahrtrichtung kosten ein Leben.
-Punkte gibt es für gefahrene Meter, Flugzeit, Drehungen (180°, 360° …) und Grabs.
+**Lande-Hilfe:** Lässt man in der Luft los, dreht sich der Fahrer automatisch zur
+nächsten sauberen Landeposition – Spins und Saltos werden „fertig gedreht“.
 
 ## Projekt starten (auf deinem eigenen Computer)
 
@@ -36,17 +49,21 @@ Punkte gibt es für gefahrene Meter, Flugzeit, Drehungen (180°, 360° …) und 
 
 | Datei | Inhalt |
 |---|---|
-| `index.html` | Seite, Menüs, Anzeige, Touch-Buttons |
-| `src/main.js` | Hauptprogramm, Licht, Himmel, Spielschleife, Punkte |
-| `src/terrain.js` | Form des Berges, Pistenverlauf, Snowpark-Elemente |
-| `src/world.js` | Erzeugt Gelände, Bäume, Felsen, Stangen stückweise |
-| `src/player.js` | Fahrphysik inkl. Sprüngen und Grinds |
-| `src/rider.js` | Snowboarder-Figur (Low-Poly) mit Gelenken und Posen |
+| `index.html` | Seite, Startbildschirm mit Logo, Menüs, Anzeige, Touch-Buttons |
+| `src/main.js` | Hauptprogramm: Grafikstufen, Licht, Spielmodi, Punkte, Spielschleife |
+| `src/attract.js` | Show-Fahrt im Startbildschirm (Autopilot + Kino-Kamera) |
+| `src/terrain.js` | Form des Berges, Pistenverlauf, Snowpark-Elemente, Slalom-Tore |
+| `src/world.js` | Erzeugt Gelände, Bäume, Felsen, Park stückweise; Schnee-Glitzern |
+| `src/details.js` | Sessellift, Schneekanonen, Berghütten, Slalom-Tore, Zielbogen |
+| `src/player.js` | Fahrphysik: Carving-Boost, Sprünge, Saltos, Spins, Grinds, Lande-Hilfe |
+| `src/rider.js` | Snowboarder-Figur nach Vorlage mit Gelenken und Posen |
 | `src/mountains.js` | Alpines Bergpanorama |
-| `src/camera.js` | Verfolgerkamera |
+| `src/sky.js` | Blauer Himmel mit Sonne und Wolken |
+| `src/camera.js` | Kamera mit 5 Ansichten |
 | `src/input.js` | Tastatur, Touch und Neigungssensor |
-| `src/effects.js` | Schnee-Spray und Schneefall |
-| `src/audio.js` | Wind- und Schneegeräusche |
-| `src/style.css` | Aussehen der Menüs und Anzeige |
+| `src/effects.js` | Schnee-Spray, Spuren im Schnee, Schneeglitzern in der Luft |
+| `src/audio.js` | Soundeffekte (Wind, Kante, Rutschen, Grind, Landung, Sturz …) |
+| `src/music.js` | Titelmusik, live im Browser erzeugt |
+| `src/style.css` | Aussehen von Logo, Menüs und Anzeige |
 
 Technik: [Three.js](https://threejs.org) (3D) und [Vite](https://vite.dev) (Entwicklungsserver).

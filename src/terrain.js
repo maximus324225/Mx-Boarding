@@ -41,7 +41,7 @@ export function baseHeight(x, z) {
 // Alle 65 m gibt es einen "Slot" mit einem oder zwei Park-Elementen.
 export const SLOT_START = -110;
 export const SLOT_SPACING = 65;
-const PATTERN = ['kickerLine', 'rail', 'table', 'box', 'rollers', 'bigKicker', 'rail', 'kickerLine', 'box', 'table', 'bigKicker', 'rollers'];
+const PATTERN = ['kickerLine', 'rail', 'bigKicker', 'box', 'table', 'kickerLine', 'rollers', 'bigKicker', 'rail', 'kickerLine', 'box', 'bigKicker'];
 
 function kicker(x, z, h, L, W, D) {
   // h: Höhe der Kante über dem Deck, L: Anlauflänge, W: Breite,
@@ -52,9 +52,29 @@ function rail(kind, x, z, len, H) {
   return { type: 'rail', kind, x, z, len, H, ramp: 4, half: kind === 'box' ? 0.28 : 0.05 };
 }
 
+// Welche Elemente gibt es auf der Strecke? (hängt vom Spielmodus ab)
+export const course = { park: true, slalom: false };
+export function setCourse(opts) {
+  Object.assign(course, opts);
+  cache.clear();
+}
+
+// ---------- Slalom-Tore ----------
+export const GATE_COUNT = 30;
+export const GATE_START = -90;
+export const GATE_SPACING = 55;
+export const GATE_HALF = 3.6; // halbe Torbreite
+export function gateAt(i) {
+  const z = GATE_START - i * GATE_SPACING;
+  const side = i % 2 === 0 ? -1 : 1;
+  const off = side * (6 + hash2(i, 5, 8) * 8);
+  return { i, z, x: pisteCenter(z) + off, half: GATE_HALF, red: i % 2 === 0 };
+}
+export const FINISH_Z = GATE_START - (GATE_COUNT - 1) * GATE_SPACING - 70;
+
 const cache = new Map();
 export function slotFeatures(i) {
-  if (i < 0) return [];
+  if (i < 0 || !course.park) return [];
   let f = cache.get(i);
   if (f) return f;
   const z = SLOT_START - i * SLOT_SPACING;

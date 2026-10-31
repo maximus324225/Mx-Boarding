@@ -10,6 +10,9 @@ export class Input {
     this.brake = false;
     this.tuck = false;
     this.jump = false;
+    this.flip = 0;
+    this.grab = false;
+    this.onCamera = null;
     this.tiltEnabled = false;
     this.tiltValue = 0;
     this.tiltZero = null;
@@ -18,6 +21,7 @@ export class Input {
     window.addEventListener('keydown', (e) => {
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
       if ((e.code === 'Escape' || e.code === 'KeyP') && !e.repeat && this.onPause) this.onPause();
+      if (e.code === 'KeyC' && !e.repeat && this.onCamera) this.onCamera();
       this.keys.add(e.code);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -93,7 +97,13 @@ export class Input {
     // weich nachführen, damit Lenkbewegungen nicht ruckartig sind
     this.steer += (target - this.steer) * Math.min(1, dt * 7);
     this.brake = k.has('ArrowDown') || k.has('KeyS') || this.touch.brake;
-    this.tuck = k.has('ArrowUp') || k.has('KeyW') || k.has('ShiftLeft') || this.touch.tuck;
+    const up = k.has('ArrowUp') || k.has('KeyW');
+    const down = k.has('ArrowDown') || k.has('KeyS');
+    this.tuck = up || this.touch.tuck;
     this.jump = k.has('Space') || this.touch.jump;
+    // In der Luft: hoch = Vorwärtssalto, runter = Rückwärtssalto, Shift/E = Grab
+    // (Handy: "Salto"-Button = Rückwärtssalto, "Grab"-Button = Grab)
+    this.flip = (up ? 1 : 0) - (down || this.touch.brake ? 1 : 0);
+    this.grab = k.has('ShiftLeft') || k.has('ShiftRight') || k.has('KeyE') || this.touch.tuck;
   }
 }

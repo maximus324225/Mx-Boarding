@@ -9,7 +9,7 @@ function ridged(x, z, seed) {
   let amp = 1;
   let freq = 1;
   let norm = 0;
-  for (let o = 0; o < 4; o++) {
+  for (let o = 0; o < 6; o++) {
     const n = 1 - Math.abs(valueNoise(x * freq, z * freq, seed + o * 31));
     sum += n * n * amp;
     norm += amp;
@@ -24,8 +24,8 @@ export function createMountains(hazeColor) {
   const haze = new THREE.Color(hazeColor);
 
   const rings = [
-    { r0: 1600, r1: 2700, rows: 9, peak: 300, seed: 3, scale: 0.0014, segs: 240, base: -150 },
-    { r0: 2900, r1: 4900, rows: 12, peak: 700, seed: 9, scale: 0.0008, segs: 320, base: -60 },
+    { r0: 1600, r1: 2700, rows: 16, peak: 300, seed: 3, scale: 0.0014, segs: 420, base: -150 },
+    { r0: 2900, r1: 4900, rows: 20, peak: 700, seed: 9, scale: 0.0008, segs: 520, base: -60 },
   ];
 
   for (const R of rings) {
@@ -48,49 +48,50 @@ export function createMountains(hazeColor) {
       grid.push(row);
     }
 
-    // Flache Dreiecke mit eigener Farbe (Low-Poly-Look)
-    const colors = [];
-    const snow = new THREE.Color(0xf4f7ff);
-    const rock = new THREE.Color(0x7a8090);
-    const darkRock = new THREE.Color(0x5a5f6e);
-    const forest = new THREE.Color(0x2f4038);
-    const c = new THREE.Color();
-    const e1 = new THREE.Vector3();
-    const e2 = new THREE.Vector3();
-    const nrm = new THREE.Vector3();
-    const pushTri = (a, b, d) => {
-      positions.push(a.x, a.y, a.z, b.x, b.y, b.z, d.x, d.y, d.z);
-      e1.subVectors(b, a);
-      e2.subVectors(d, a);
-      nrm.crossVectors(e1, e2).normalize();
-      const y = (a.y + b.y + d.y) / 3;
-      const slope = Math.abs(nrm.y);
-      const snowLine = R.base + R.peak * 0.45 + valueNoise(a.x * 0.01, a.z * 0.01, 4) * 50;
-      if (y < snowLine - R.peak * 0.35) c.copy(forest).lerp(rock, 0.25);
-      else if (y > snowLine && slope > 0.2) c.copy(snow);
-      else if (y > snowLine - R.peak * 0.15 && slope > 0.5) c.copy(snow).lerp(rock, 0.15);
-      else c.copy(slope > 0.55 ? rock : darkRock);
-      // Luftperspektive: weit entfernte und tiefe Bereiche verschwimmen im Dunst
-      const dist = Math.hypot(a.x, a.z);
-      const fade = Math.min(0.85, 0.15 + (dist - 1500) / 5000 + Math.max(0, 1 - (y + 250) / 350) * 0.5);
-      c.lerp(haze, Math.max(0, fade));
-      for (let k = 0; k < 3; k++) colors.push(c.r, c.g, c.b);
-    };
+    // Weich schattiertes Gitter mit Farben pro Eckpunkt (Schnee, Fels, Wald, Dunst)
+    const cols = R.segs + 1;
+    const pos = new Float32Array((R.rows + 1) * cols * 3);
+    grid.forEach((row, j) => row.forEach((v, i) => pos.set([v.x, v.y, v.z], (j * cols + i) * 3)));
+    const idx = [];
     for (let j = 0; j < R.rows; j++) {
       for (let i = 0; i < R.segs; i++) {
-        const a = grid[j][i];
-        const b = grid[j][i + 1];
-        const d = grid[j + 1][i];
-        const e = grid[j + 1][i + 1];
-        pushTri(a, b, d);
-        pushTri(b, e, d);
+        const a = j * cols + i;
+        const b = a + 1;
+        const d = a + cols;
+        const e = d + 1;
+        idx.push(a, b, d, b, e, d);
       }
     }
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(idx);
     geo.computeVertexNormals();
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, fog: false });
+    const nrm = geo.attributes.normal;
+    const colors = new Float32Array(pos.length);
+    const snow = new THREE.Color(0xf6f9ff);
+    const rock = new THREE.Color(0x7c8293);
+    const darkRock = new THREE.Color(0x585d6c);
+    const forest = new THREE.Color(0x34463d);
+    const c = new THREE.Color();
+    for (let k = 0; k < pos.length / 3; k++) {
+      const x = pos[k * 3];
+      const y = pos[k * 3 + 1];
+      const z = pos[k * 3 + 2];
+      const flat = nrm.getY(k);
+      const snowLine = R.base + R.peak * 0.4 + valueNoise(x * 0.01, z * 0.01, 4) * 60;
+      const snowAmt = THREE.MathUtils.smoothstep(y, snowLine - 40, snowLine + 30) * THREE.MathUtils.smoothstep(flat, 0.35, 0.6);
+      const forestAmt = 1 - THREE.MathUtils.smoothstep(y, snowLine - R.peak * 0.45, snowLine - R.peak * 0.25);
+      c.copy(flat > 0.6 ? rock : darkRock).lerp(rock, valueNoise(x * 0.03, z * 0.03, 7) * 0.5 + 0.5);
+      c.lerp(forest, forestAmt * 0.8);
+      c.lerp(snow, Math.max(snowAmt, forestAmt > 0.5 ? 0 : snowAmt));
+      // Luftperspektive: weit entfernte und tiefe Bereiche verschwimmen im Dunst
+      const dist = Math.hypot(x, z);
+      const fade = Math.min(0.85, 0.12 + (dist - 1500) / 5200 + Math.max(0, 1 - (y + 250) / 350) * 0.5);
+      c.lerp(haze, Math.max(0, fade));
+      colors.set([c.r, c.g, c.b], k * 3);
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, fog: false });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.frustumCulled = false;
     group.add(mesh);
