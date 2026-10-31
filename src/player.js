@@ -10,7 +10,8 @@
 //  - In der Luft wirkt nur noch die Schwerkraft. Die Landung muss halbwegs
 //    in Fahrtrichtung erfolgen (vorwärts oder rückwärts/"switch"), sonst Sturz.
 import * as THREE from 'three';
-import { heightAt, normalAt } from './terrain.js';
+import { heightAt, normalAt, featuresNear, railLine } from './terrain.js';
+import { buildRider, poseRider } from './rider.js';
 
 const G = 9.81;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -20,92 +21,10 @@ const _r = new THREE.Vector3();
 const _t = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 
-function mat(color, rough = 0.7) {
-  return new THREE.MeshStandardMaterial({ color, roughness: rough });
-}
-
-function buildRider() {
-  const root = new THREE.Group();
-  const yawG = new THREE.Group();   // Querstellen beim Bremsen
-  const leanG = new THREE.Group();  // Kurvenlage + Sturz-Rotation
-  root.add(yawG);
-  yawG.add(leanG);
-
-  // Board (zeigt entlang -Z = vorne)
-  const boardGeo = new THREE.BoxGeometry(0.29, 0.025, 1.5);
-  const board = new THREE.Mesh(boardGeo, mat(0xc4202f, 0.4));
-  board.position.y = 0.03;
-  const noseGeo = new THREE.CylinderGeometry(0.145, 0.145, 0.025, 16, 1, false, 0, Math.PI);
-  const nose = new THREE.Mesh(noseGeo, board.material);
-  nose.rotation.y = Math.PI / 2;
-  nose.position.set(0, 0.03, -0.75);
-  const tail = nose.clone();
-  tail.rotation.y = -Math.PI / 2;
-  tail.position.z = 0.75;
-  leanG.add(board, nose, tail);
-
-  const bindingMat = mat(0x151515, 0.5);
-  for (const z of [-0.24, 0.24]) {
-    const b = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.06, 0.13), bindingMat);
-    b.position.set(0, 0.07, z);
-    leanG.add(b);
-  }
-
-  // Körper: Fahrer steht seitlich, Gesicht Richtung +X, Blick nach vorne (-Z)
-  const pants = mat(0x26324d, 0.9);
-  const jacket = mat(0xe8562a, 0.8);
-  const skin = mat(0xd9a07a, 0.8);
-  const helmetMat = mat(0xf2f2f2, 0.3);
-
-  const legs = [];
-  for (const z of [-0.22, 0.22]) {
-    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.62, 4, 8), pants);
-    leg.position.set(0, 0.47, z);
-    leg.rotation.x = z < 0 ? 0.12 : -0.12;
-    leanG.add(leg);
-    legs.push(leg);
-  }
-  for (const z of [-0.22, 0.22]) {
-    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.13, 0.12), mat(0x333333));
-    boot.position.set(0.02, 0.11, z);
-    leanG.add(boot);
-  }
-
-  const upper = new THREE.Group(); // Oberkörper (wandert beim Hocken nach unten)
-  leanG.add(upper);
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.36, 4, 10), jacket);
-  torso.position.set(0, 1.12, 0);
-  upper.add(torso);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), skin);
-  head.position.set(0, 1.53, 0);
-  upper.add(head);
-  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.128, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), helmetMat);
-  helmet.position.copy(head.position).add(new THREE.Vector3(0, 0.015, 0));
-  upper.add(helmet);
-  const goggles = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.06, 0.05), mat(0x1a8fd6, 0.1));
-  goggles.position.set(0.03, 1.55, -0.1);
-  upper.add(goggles);
-
-  const arms = [];
-  for (const side of [-1, 1]) {
-    // Schulter-Gelenk: Arm + Handschuh drehen gemeinsam
-    const pivot = new THREE.Group();
-    pivot.position.set(0, 1.3, side * 0.17);
-    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.42, 4, 8), jacket);
-    arm.position.y = -0.24;
-    const glove = new THREE.Mesh(new THREE.SphereGeometry(0.065, 8, 6), mat(0x111111));
-    glove.position.y = -0.52;
-    pivot.add(arm, glove);
-    pivot.userData.side = side;
-    upper.add(pivot);
-    arms.push(pivot);
-  }
-
-  root.traverse((o) => {
-    if (o.isMesh) o.castShadow = true;
-  });
-
-  return { root, yawG, leanG, upper, legs, arms };
+function wrapAngle(a) {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
 }
 
 export class Player {
@@ -143,6 +62,12 @@ export class Player {
     this.model.leanG.rotation.set(0, 0, 0);
     this.ghost = 0; // Schutzzeit nach Neustart (keine Kollisionen)
     this.noCollide = false;
+    this.rail = null;
+    this.exitAssist = false;
+    this.grab = false;
+    this.tucking = false;
+    this.pose = { crouch: 0, grab: 0, tuck: 0, brake: 0, edge: 0, airborne: 0, grind: 0, dt: 0 };
+    this.model.handsInit = false;
     this.update(0);
   }
 
@@ -164,9 +89,11 @@ export class Player {
   step(dt, input, world) {
     if (this.state === 'crashed') return this.crashedStep(dt);
     if (this.ghost > 0) this.ghost -= dt;
+    if (this.state === 'grind') return this.grindStep(dt, input);
     if (this.state === 'ground') this.groundStep(dt, input);
     else this.airStep(dt, input);
-    if (this.state !== 'crashed') this.collide(world);
+    if (this.state === 'ground' || this.state === 'air') this.checkRails();
+    if (this.state === 'ground' || this.state === 'air') this.collide(world);
   }
 
   groundStep(dt, input) {
@@ -216,6 +143,7 @@ export class Player {
 
     // Anschieben, wenn man fast steht
     const tuck = input.tuck && !braking;
+    this.tucking = tuck;
     if (input.tuck && sp < 4) this.vel.addScaledVector(_f, this.travelSign * 2.5 * dt);
 
     // Reibung + Luftwiderstand (+ Bremsen)
@@ -252,6 +180,7 @@ export class Player {
     this.airTime = 0;
     this.spin = 0;
     this.maxHeight = 0;
+    this.exitAssist = false;
   }
 
   airStep(dt, input) {
@@ -263,6 +192,13 @@ export class Player {
     const spinRate = -input.steer * 6.5;
     this.heading += spinRate * dt;
     this.spin += spinRate * dt;
+    // Nach einem Boardslide dreht sich das Board von selbst zurück in Fahrtrichtung
+    if (this.exitAssist && Math.abs(input.steer) < 0.15) {
+      const velYaw = Math.atan2(-this.vel.x, -this.vel.z);
+      let d = wrapAngle(velYaw - this.heading);
+      if (Math.abs(d) > Math.PI / 2) d = wrapAngle(d + Math.PI);
+      this.heading += Math.sign(d) * Math.min(Math.abs(d), 7 * dt);
+    }
     this.airTime += dt;
 
     this.pos.addScaledVector(this.vel, dt);
@@ -272,6 +208,7 @@ export class Player {
     const targetCrouch = input.tuck ? 1 : 0.35; // Hocke in der Luft = Grab
     this.crouch += (targetCrouch - this.crouch) * Math.min(1, dt * 10);
     this.grab = input.tuck;
+    this.tucking = false;
     this.charge = 0;
 
     if (this.pos.y <= hg) this.land(hg);
@@ -288,8 +225,8 @@ export class Player {
     const align = hSpeed > 0.01 ? Math.abs(_t.dot(_f)) / hSpeed : 1;
     const spinDeg = Math.round(Math.abs(this.spin) / Math.PI) * 180;
 
-    if ((hSpeed > 3 && align < Math.cos(THREE.MathUtils.degToRad(40))) || -vn > 15) {
-      this.crash(-vn > 15 ? 'impact' : 'landing');
+    if ((hSpeed > 3 && align < Math.cos(THREE.MathUtils.degToRad(40))) || -vn > 17) {
+      this.crash(-vn > 17 ? 'impact' : 'landing');
       return;
     }
     this.vel.addScaledVector(n, -vn);
@@ -302,6 +239,87 @@ export class Player {
       });
     }
     this.travelSign = this.vel.dot(_f) >= 0 ? 1 : -1;
+  }
+
+
+  // ---------- Rails & Boxen ----------
+  checkRails() {
+    for (const f of featuresNear(this.pos.z)) {
+      if (f.type !== 'rail') continue;
+      const L = railLine(f);
+      const t = ((L.start.z - this.pos.z) / (L.start.z - L.end.z)) * L.length;
+      if (t < -0.4 || t > L.length - 0.3) continue;
+      const lat = Math.abs(this.pos.x - L.start.x);
+      if (lat > f.half + 0.35) continue;
+      const topY = L.start.y + L.dir.y * t;
+      const dy = this.pos.y - topY;
+      const along = this.vel.dot(L.dir);
+      const canEnter = this.state === 'ground' ? dy > -0.3 : this.vel.y < 1.0;
+      if (dy > -0.3 && dy < 0.6 && along > 2 && canEnter) {
+        this.startGrind(f, L, t);
+        return;
+      }
+      // seitlich gegen Rail/Box gefahren
+      if (this.state === 'ground' && dy <= -0.3 && t > 0.2 && lat < f.half + 0.25 && !this.noCollide && this.ghost <= 0) {
+        if (this.speed > 4) {
+          this.crash('obstacle');
+          return;
+        }
+        this.pos.x = L.start.x + Math.sign(this.pos.x - L.start.x || 1) * (f.half + 0.26);
+      }
+    }
+  }
+
+  startGrind(f, L, t) {
+    this.state = 'grind';
+    this.rail = { f, L };
+    this.railT = Math.max(0, t);
+    this.railSpeed = Math.max(this.vel.dot(L.dir), 3);
+    this.grindTime = 0;
+    this.charge = 0;
+    const railYaw = Math.atan2(-L.dir.x, -L.dir.z);
+    const d = wrapAngle(this.heading - railYaw);
+    if (Math.abs(Math.cos(d)) > 0.6) {
+      this.grindKind = f.kind === 'box' ? '50-50 Box' : '50-50';
+      this.heading = railYaw + (Math.cos(d) < 0 ? Math.PI : 0);
+    } else {
+      this.grindKind = f.kind === 'box' ? 'Boardslide Box' : 'Boardslide';
+      this.heading = railYaw + (Math.sin(d) > 0 ? 1 : -1) * Math.PI / 2;
+    }
+    this.events.push({ type: 'grindStart' });
+  }
+
+  grindStep(dt, input) {
+    const L = this.rail.L;
+    const s = this.railSpeed;
+    const acc = -G * L.dir.y - 0.07 * G - 0.002 * s * s;
+    this.railSpeed += acc * dt;
+    this.railT += this.railSpeed * dt;
+    this.grindTime += dt;
+    this.pos.copy(L.start).addScaledVector(L.dir, this.railT);
+    this.vel.copy(L.dir).multiplyScalar(this.railSpeed);
+    this.normal.set(0, 1, 0);
+    this.edge += (0 - this.edge) * Math.min(1, dt * 8);
+    this.brakeAmount = 0;
+    this.crouch += (0.4 - this.crouch) * Math.min(1, dt * 8);
+
+    if (input.jump) {
+      this.charge = Math.min(1, this.charge + dt / 0.45);
+    } else if (this.charge > 0) {
+      this.vel.y += 2.5 + 2 * this.charge;
+      this.charge = 0;
+      this.endGrind();
+      return;
+    }
+    if (this.railT >= L.length || this.railSpeed < 0.5) this.endGrind();
+  }
+
+  endGrind() {
+    this.events.push({ type: 'grind', time: this.grindTime, kind: this.grindKind });
+    this.rail = null;
+    this.pos.y += 0.03;
+    this.takeOff();
+    this.exitAssist = true;
   }
 
   collide(world) {
@@ -356,7 +374,7 @@ export class Player {
   // Grafik an den Physik-Zustand anpassen (einmal pro Bild)
   update(dt) {
     const k = dt > 0 ? 1 - Math.exp(-12 * dt) : 1;
-    const targetUp = this.state === 'air' ? WORLD_UP : this.normal;
+    const targetUp = this.state === 'air' || this.state === 'grind' ? WORLD_UP : this.normal;
     this.visUp.lerp(targetUp, k).normalize();
 
     const up = this.visUp;
@@ -365,7 +383,7 @@ export class Player {
     _r.crossVectors(_f, up).normalize();
     _t.copy(_f).negate();
     _m.makeBasis(_r, up, _t);
-    const { root, yawG, leanG, upper, legs, arms } = this.model;
+    const { root, yawG, leanG } = this.model;
     root.quaternion.setFromRotationMatrix(_m);
     root.position.copy(this.pos);
 
@@ -376,20 +394,18 @@ export class Player {
       leanG.rotation.set(0, 0, -this.edge * sgn);
     }
 
-    // Hocke: Beine kürzer, Oberkörper tiefer und nach vorne gebeugt
-    const c = this.crouch;
-    upper.position.y = -0.3 * c;
-    upper.rotation.z = -0.25 * c;
-    for (const leg of legs) {
-      leg.scale.y = 1 - 0.38 * c;
-      leg.position.y = 0.47 - 0.15 * c;
-    }
-    const grab = this.state === 'air' && this.grab;
-    for (const arm of arms) {
-      const side = arm.userData.side;
-      // Arme zur Balance ausgestreckt, beim Grab Richtung Board
-      arm.rotation.x = -side * (grab ? 0.25 : 1.0 - c * 0.35);
-      arm.rotation.z = grab ? 0.5 : 0.15 + this.edge * 0.3;
-    }
+    // Körperhaltung (Hocke, Grab, Balance …)
+    const P = this.pose;
+    const f = dt > 0 ? Math.min(1, dt * 10) : 1;
+    const air = this.state === 'air';
+    P.crouch = this.crouch;
+    P.grab += ((air && this.grab ? 1 : 0) - P.grab) * f;
+    P.tuck += ((this.tucking ? 1 : 0) - P.tuck) * f;
+    P.brake = this.brakeAmount;
+    P.edge = this.edge;
+    P.airborne += ((air ? 1 : 0) - P.airborne) * f;
+    P.grind += ((this.state === 'grind' ? 1 : 0) - P.grind) * f;
+    P.dt = dt;
+    poseRider(this.model, P);
   }
 }

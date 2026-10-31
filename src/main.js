@@ -8,7 +8,8 @@ import { Input } from './input.js';
 import { ChaseCamera } from './camera.js';
 import { Effects } from './effects.js';
 import { AudioEngine } from './audio.js';
-import { pisteCenter, pisteHeading, heightAt, kickerAt } from './terrain.js';
+import { pisteCenter, pisteHeading, heightAt, featuresNear, slotFeatures, railLine } from './terrain.js';
+import { createMountains } from './mountains.js';
 import './style.css';
 
 const mobile = window.matchMedia('(pointer: coarse)').matches;
@@ -25,15 +26,15 @@ renderer.toneMappingExposure = 0.95;
 document.getElementById('app').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-const FOG_COLOR = new THREE.Color(0xc9d6e6);
-scene.fog = new THREE.Fog(FOG_COLOR, 60, 360);
+const FOG_COLOR = new THREE.Color(0xc5d3e4);
+scene.fog = new THREE.Fog(FOG_COLOR, 140, 680);
 scene.background = FOG_COLOR;
 
-const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 3000);
+const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 14000);
 
 // Himmel mit physikalischer Sonnenstreuung
 const sky = new Sky();
-sky.scale.setScalar(2500);
+sky.scale.setScalar(12000);
 const sun = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(68), THREE.MathUtils.degToRad(200));
 sky.material.uniforms.turbidity.value = 4;
 sky.material.uniforms.rayleigh.value = 1.2;
@@ -41,6 +42,10 @@ sky.material.uniforms.mieCoefficient.value = 0.004;
 sky.material.uniforms.mieDirectionalG.value = 0.85;
 sky.material.uniforms.sunPosition.value.copy(sun);
 scene.add(sky);
+
+// Bergpanorama rundherum
+const mountains = createMountains(FOG_COLOR);
+scene.add(mountains);
 
 // Licht: Sonne (mit Schatten) + Himmelslicht
 const hemi = new THREE.HemisphereLight(0xcfe2ff, 0x7d8ba0, 1.1);
@@ -212,6 +217,14 @@ function handleEvents() {
         trickPoints += pts;
         showPopup(`${parts.join(' · ')}<br><span class="pts">+${pts}</span>`, ev.spin >= 360);
       }
+    } else if (ev.type === 'grindStart') {
+      audio.thump(0.4);
+    } else if (ev.type === 'grind') {
+      if (ev.time > 0.25) {
+        const pts = Math.round(50 + ev.time * 250);
+        trickPoints += pts;
+        showPopup(`<b>${ev.kind}</b> · ${ev.time.toFixed(1)} s<br><span class="pts">+${pts}</span>`);
+      }
     } else if (ev.type === 'jump') {
       audio.thump(0.3);
     } else if (ev.type === 'crash') {
@@ -283,6 +296,7 @@ function frame(time) {
   sunLight.position.copy(player.pos).addScaledVector(sun, 90);
   sunLight.target.position.copy(player.pos);
   sky.position.copy(camera.position);
+  mountains.position.set(camera.position.x, player.pos.y - 420, camera.position.z);
 
   // Anzeige
   ui.speed.textContent = Math.round(player.speed * 3.6);
@@ -307,4 +321,4 @@ setState('menu');
 frame();
 
 // Für automatische Tests
-window.__game = { player, input, world, pisteCenter, heightAt, kickerAt, get state() { return state; }, play };
+window.__game = { player, input, world, pisteCenter, heightAt, featuresNear, slotFeatures, railLine, chase, get state() { return state; }, play };

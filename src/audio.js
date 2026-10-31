@@ -74,10 +74,12 @@ export class AudioEngine {
     this.windFilter.frequency.setTargetAtTime(300 + w * 1400, t, 0.2);
 
     const onSnow = player.state === 'ground' ? 1 : 0;
+    const grind = player.state === 'grind';
     const s = Math.min(1, sp / 18);
-    const g = onSnow * s * (0.04 + Math.abs(player.edge) * 0.22 + player.brakeAmount * 0.35);
+    let g = onSnow * s * (0.04 + Math.abs(player.edge) * 0.22 + player.brakeAmount * 0.35);
+    if (grind) g = 0.3;
     this.scrapeGain.gain.setTargetAtTime(g, t, 0.06);
-    this.scrapeFilter.frequency.setTargetAtTime(900 + s * 1500 - player.brakeAmount * 400, t, 0.1);
+    this.scrapeFilter.frequency.setTargetAtTime(grind ? 3200 : 900 + s * 1500 - player.brakeAmount * 400, t, 0.1);
   }
 
   thump(strength = 1) {

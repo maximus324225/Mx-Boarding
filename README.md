@@ -12,6 +12,8 @@ Realistisches Snowboard-Spiel mit endlosem Berg, Schanzen, Tricks und Steuerung 
 | Leertaste halten + loslassen | Sprung halten + loslassen | Sprung (länger halten = höher) |
 | Esc / P | ⏸ | Pause |
 
+**Snowpark:** Schanzen (bis über 5 m Flughöhe), Tables, Wellenbahnen, Rails und Boxen zum Grinden.
+
 **Regeln:** 3 Leben. Bäume, Felsen und Landungen quer zur Fahrtrichtung kosten ein Leben.
 Punkte gibt es für gefahrene Meter, Flugzeit, Drehungen (180°, 360° …) und Grabs.
 
@@ -36,9 +38,11 @@ Punkte gibt es für gefahrene Meter, Flugzeit, Drehungen (180°, 360° …) und 
 |---|---|
 | `index.html` | Seite, Menüs, Anzeige, Touch-Buttons |
 | `src/main.js` | Hauptprogramm, Licht, Himmel, Spielschleife, Punkte |
-| `src/terrain.js` | Form des Berges, Pistenverlauf, Schanzen |
+| `src/terrain.js` | Form des Berges, Pistenverlauf, Snowpark-Elemente |
 | `src/world.js` | Erzeugt Gelände, Bäume, Felsen, Stangen stückweise |
-| `src/player.js` | Snowboarder-Figur und Fahrphysik |
+| `src/player.js` | Fahrphysik inkl. Sprüngen und Grinds |
+| `src/rider.js` | Snowboarder-Figur (Low-Poly) mit Gelenken und Posen |
+| `src/mountains.js` | Alpines Bergpanorama |
 | `src/camera.js` | Verfolgerkamera |
 | `src/input.js` | Tastatur, Touch und Neigungssensor |
 | `src/effects.js` | Schnee-Spray und Schneefall |
