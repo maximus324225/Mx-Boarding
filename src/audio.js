@@ -20,6 +20,10 @@ export class AudioEngine {
 
   // Browser erlauben Ton erst nach einer Nutzer-Aktion (Klick/Tipp)
   unlock() {
+    // iPhone: Ton auch abspielen, wenn der Stummschalter aktiv ist (wie bei Spiele-Apps)
+    try {
+      if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    } catch { /* egal */ }
     if (this.ctx) {
       if (this.ctx.state !== 'running') this.ctx.resume();
       return;
@@ -28,6 +32,14 @@ export class AudioEngine {
     if (!AC) return;
     const ctx = new AC();
     this.ctx = ctx;
+    // iOS gibt Web-Audio erst frei, wenn innerhalb der Berührung etwas abgespielt wird
+    try {
+      const silent = ctx.createBufferSource();
+      silent.buffer = ctx.createBuffer(1, 1, 22050);
+      silent.connect(ctx.destination);
+      silent.start(0);
+      ctx.resume();
+    } catch { /* egal */ }
 
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14;

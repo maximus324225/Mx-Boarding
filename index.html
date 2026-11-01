@@ -9,9 +9,82 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Saira:wght@400;600;700;800&display=swap" rel="stylesheet" />
+    <!-- Start-Absicherung: zeigt verständliche Fehlermeldungen statt eines leeren Bildschirms -->
+    <script>
+      (function () {
+        var shown = false;
+        function deviceInfo() {
+          var gl2 = false, gpu = '';
+          try {
+            var g = document.createElement('canvas').getContext('webgl2');
+            gl2 = !!g;
+            if (g) {
+              var ext = g.getExtension('WEBGL_debug_renderer_info');
+              gpu = ext ? g.getParameter(ext.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER);
+              var lose = g.getExtension('WEBGL_lose_context');
+              if (lose) lose.loseContext();
+            }
+          } catch (e) { /* egal */ }
+          return 'WebGL 2: ' + (gl2 ? 'ja' : 'nein') + (gpu ? ' (' + gpu + ')' : '') + '\n' + navigator.userAgent;
+        }
+        window.__mxFatal = function (title, detail) {
+          if (shown) return;
+          shown = true;
+          var show = function () {
+            var boot = document.getElementById('boot');
+            if (boot) boot.hidden = true;
+            var el = document.getElementById('fatal');
+            if (!el) return;
+            document.getElementById('fatal-title').textContent = title;
+            document.getElementById('fatal-detail').textContent = detail || '';
+            document.getElementById('fatal-info').textContent = deviceInfo();
+            el.hidden = false;
+          };
+          if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show);
+          else show();
+        };
+        window.__mxSafeReload = function () {
+          try { localStorage.setItem('mx-quality', 'minimal'); } catch (e) { /* egal */ }
+          location.reload();
+        };
+        window.addEventListener('error', function (e) {
+          if (window.__mxReady) return;
+          var where = e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : '';
+          window.__mxFatal('Das Spiel konnte nicht starten', (e.message || 'Unbekannter Fehler') + where);
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          if (window.__mxReady) return;
+          window.__mxFatal('Das Spiel konnte nicht starten', String(e.reason));
+        });
+        document.addEventListener('DOMContentLoaded', function () {
+          try {
+            if (!document.createElement('canvas').getContext('webgl2')) {
+              window.__mxFatal('3D-Grafik nicht verfügbar', 'Dieser Browser stellt kein WebGL 2 bereit. Auf dem iPhone braucht das Spiel iOS 15 oder neuer; der Blockierungsmodus von iOS kann 3D-Grafik ebenfalls abschalten.');
+            }
+          } catch (e) { /* egal */ }
+        });
+        setTimeout(function () {
+          if (!window.__mxReady) window.__mxFatal('Das Spiel startet nicht', 'Nach 25 Sekunden wurde noch kein Bild gezeichnet.');
+        }, 25000);
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>
+    <div id="boot"><div class="boot-logo">MX</div><div class="boot-text">Berg wird geladen …</div></div>
+    <div id="fatal" class="overlay" hidden>
+      <div class="panel">
+        <p class="eyebrow">MX Boarding</p>
+        <h2 id="fatal-title">Das Spiel konnte nicht starten</h2>
+        <p class="detail" id="fatal-detail"></p>
+        <div class="stack">
+          <button class="primary" onclick="window.__mxSafeReload()">Mit sparsamer Grafik neu laden</button>
+          <button class="secondary" onclick="location.reload()">Neu laden</button>
+        </div>
+        <p class="tip">Technische Angaben (hilfreich bei der Fehlersuche):</p>
+        <pre id="fatal-info" class="fatal-info"></pre>
+      </div>
+    </div>
     <div id="vignette"></div>
 
     <!-- Anzeige während der Fahrt -->
@@ -73,6 +146,11 @@
         </svg>
       </div>
 
+      <div class="screen-middle">
+        <div id="sound-hint">Tippen oder Taste drücken für Musik</div>
+        <div class="rotate-hint">Tipp: Handy quer halten</div>
+      </div>
+
       <div class="menu-bottom">
         <div class="modes" id="modes" role="radiogroup" aria-label="Spielmodus"></div>
         <div class="menu-actions">
@@ -84,7 +162,6 @@
           </div>
         </div>
       </div>
-      <div id="sound-hint">Tippen oder Taste drücken für Musik</div>
     </div>
 
     <!-- Steuerung -->

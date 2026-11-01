@@ -31,6 +31,13 @@ function savePref(key, value) {
   try { localStorage.setItem(key, String(value)); } catch { /* egal */ }
 }
 
+// Ist das Spiel beim letzten Start abgestürzt (z. B. weil das Handy den
+// Grafikspeicher abgeschaltet hat)? Dann automatisch sparsamer starten.
+const crashedLastTime = loadPref('mx-booting', '0') === '1';
+savePref('mx-booting', '1');
+window.addEventListener('pagehide', () => savePref('mx-booting', '0'));
+setTimeout(() => savePref('mx-booting', '0'), 10000);
+
 // ---------- Renderer & Szene ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -39,6 +46,17 @@ renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 document.getElementById('app').appendChild(renderer.domElement);
+renderer.domElement.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  const order = ['high', 'medium', 'low', 'minimal'];
+  const cur = loadPref('mx-quality', 'medium');
+  const next = order[Math.min(order.length - 1, order.indexOf(cur) + 1)] || 'minimal';
+  savePref('mx-quality', next);
+  window.__mxReady = false;
+  if (window.__mxFatal) {
+    window.__mxFatal('Grafikspeicher voll', 'Das Gerät hat die 3D-Grafik abgeschaltet. Beim Neuladen startet das Spiel mit sparsamerer Grafik.');
+  }
+});
 
 const scene = new THREE.Scene();
 const FOG_COLOR = SKY.horizon.clone();
@@ -63,7 +81,8 @@ const groundGlow = new THREE.Mesh(
 groundGlow.rotation.x = -Math.PI / 2;
 groundGlow.position.y = -40;
 envScene.add(groundGlow);
-scene.environment = pmrem.fromScene(envScene, 0.03).texture;
+const envTexture = pmrem.fromScene(envScene, 0.03).texture;
+scene.environment = envTexture;
 scene.environmentIntensity = 0.6;
 
 const mountains = createMountains(FOG_COLOR);
@@ -85,10 +104,17 @@ const QUALITY = {
   high: { label: 'Hoch', pr: 2, shadow: 4096, post: true, view: 6, fog: 760 },
   medium: { label: 'Mittel', pr: 1.5, shadow: 2048, post: false, view: 5, fog: 640 },
   low: { label: 'Niedrig', pr: 1, shadow: 1024, post: false, view: 4, fog: 520 },
+  minimal: { label: 'Minimal', pr: 1, shadow: 0, post: false, view: 3, fog: 420, noEnv: true },
 };
-const QUALITY_ORDER = ['high', 'medium', 'low'];
+const QUALITY_ORDER = ['high', 'medium', 'low', 'minimal'];
 let quality = loadPref('mx-quality', mobile ? 'medium' : 'high');
-if (!QUALITY[quality]) quality = 'high';
+if (!QUALITY[quality]) quality = mobile ? 'medium' : 'high';
+let qualityLowered = false;
+if (crashedLastTime && quality !== 'minimal') {
+  quality = QUALITY_ORDER[QUALITY_ORDER.indexOf(quality) + 1];
+  savePref('mx-quality', quality);
+  qualityLowered = true;
+}
 let composer = null;
 let bloom = null;
 
@@ -107,7 +133,10 @@ function applyQuality() {
   const q = QUALITY[quality];
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, q.pr));
   renderer.setSize(window.innerWidth, window.innerHeight);
-  sunLight.shadow.mapSize.set(q.shadow, q.shadow);
+  sunLight.castShadow = q.shadow > 0;
+  if (q.shadow > 0) sunLight.shadow.mapSize.set(q.shadow, q.shadow);
+  scene.environment = q.noEnv ? null : envTexture;
+  hemi.intensity = q.noEnv ? 1.1 : 0.55;
   setViewChunks(q.view);
   scene.fog.far = q.fog;
   scene.fog.near = q.fog * 0.22;
@@ -436,6 +465,8 @@ function unlockAudio() {
   ui.soundHint.classList.add('hidden');
 }
 window.addEventListener('pointerdown', unlockAudio);
+window.addEventListener('touchend', unlockAudio);
+window.addEventListener('click', unlockAudio);
 window.addEventListener('keydown', unlockAudio);
 
 document.addEventListener('visibilitychange', () => {
@@ -656,6 +687,12 @@ function frame(time) {
 
   if (QUALITY[quality].post && composer) composer.render(dt);
   else renderer.render(scene, camera);
+  if (!window.__mxReady) {
+    window.__mxReady = true;
+    const boot = document.getElementById('boot');
+    if (boot) boot.hidden = true;
+    if (qualityLowered) showPopup(`Grafik auf „${QUALITY[quality].label}“ reduziert,<br><small>weil das Spiel beim letzten Start abgestürzt ist</small>`, false, 4);
+  }
   requestAnimationFrame(frame);
 }
 

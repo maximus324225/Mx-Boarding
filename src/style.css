@@ -33,6 +33,25 @@ html, body {
   overscroll-behavior: none;
 }
 
+#boot {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  background: radial-gradient(ellipse at 50% 40%, #1d3a6b 0%, var(--ink) 70%);
+}
+#boot[hidden], #fatal[hidden] { display: none !important; }
+.boot-logo {
+  font-family: var(--font-display); font-size: 84px; transform: skewX(-8deg);
+  background: linear-gradient(170deg, #fff 0%, var(--accent-hi) 45%, var(--accent-2) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.boot-text { font-weight: 700; letter-spacing: 0.08em; color: var(--muted); animation: blink 1.4s ease-in-out infinite; }
+#fatal { z-index: 60; }
+.fatal-info {
+  text-align: left; white-space: pre-wrap; word-break: break-word; font-size: 11px; line-height: 1.4;
+  background: rgba(0, 0, 0, 0.3); border-radius: 8px; padding: 8px 10px; margin: 0; color: var(--muted);
+  user-select: text; -webkit-user-select: text; max-height: 140px; overflow: auto;
+}
+
 #app, #app canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 #vignette {
   position: fixed; inset: 0; pointer-events: none;
@@ -77,7 +96,7 @@ button:focus-visible { outline: 3px solid var(--accent-hi); outline-offset: 2px;
 button.icon {
   width: 42px; height: 42px; border-radius: 12px; border: none;
   background: rgba(13, 27, 51, 0.4); color: #fff; font-size: 18px; cursor: pointer;
-  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
 }
 button.icon.active { background: var(--accent); }
 button.icon.off { opacity: 0.45; }
@@ -116,7 +135,7 @@ body:not(.mobile) #touch { display: none; }
   border: 2px solid rgba(255, 255, 255, 0.7);
   background: rgba(13, 27, 51, 0.3);
   color: #fff; font-weight: 800; border-radius: 50%;
-  backdrop-filter: blur(4px); touch-action: none;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(4px); touch-action: none;
   -webkit-tap-highlight-color: transparent;
 }
 .tbtn.pressed { background: rgba(47, 123, 255, 0.8); border-color: #fff; }
@@ -170,7 +189,7 @@ body.tilt .touch-left { visibility: hidden; }
 .mode {
   text-align: left; cursor: pointer;
   border: 2px solid var(--line); border-radius: 16px;
-  background: rgba(13, 27, 51, 0.62); backdrop-filter: blur(8px);
+  background: rgba(13, 27, 51, 0.62); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(8px);
   color: var(--text); padding: 14px 14px 12px;
   display: flex; flex-direction: column; gap: 6px; min-width: 0;
   transition: border-color 0.15s, transform 0.15s, background 0.15s;
@@ -190,7 +209,7 @@ body.tilt .touch-left { visibility: hidden; }
 .chip {
   border: 1px solid var(--line); border-radius: 999px; padding: 9px 14px;
   background: rgba(13, 27, 51, 0.6); color: var(--text); font-weight: 700; font-size: 14px; cursor: pointer;
-  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
 }
 .chip:hover { border-color: rgba(255, 255, 255, 0.4); }
 
@@ -206,12 +225,16 @@ button.secondary {
   background: rgba(255, 255, 255, 0.06); color: var(--text); font-weight: 700; font-size: 16px; cursor: pointer;
 }
 
-#sound-hint {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+#sound-hint, .rotate-hint {
   font-weight: 700; font-size: 14px; letter-spacing: 0.06em; color: #fff;
   background: rgba(13, 27, 51, 0.55); border: 1px solid var(--line);
-  padding: 8px 16px; border-radius: 999px; pointer-events: none;
-  animation: blink 1.6s ease-in-out infinite;
+  padding: 8px 16px; border-radius: 999px; pointer-events: none; text-align: center;
+}
+#sound-hint { animation: blink 1.6s ease-in-out infinite; }
+.screen-middle { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.rotate-hint { display: none; }
+@media (orientation: portrait) {
+  body.mobile .rotate-hint { display: block; }
 }
 @keyframes blink { 50% { opacity: 0.45; } }
 
@@ -222,10 +245,10 @@ button.secondary {
   background: rgba(5, 12, 30, 0.45);
 }
 .panel {
-  background: var(--panel); backdrop-filter: blur(14px);
+  background: var(--panel); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(14px);
   border: 1px solid var(--line);
   border-radius: 20px; padding: 24px 28px; width: min(100%, 460px);
-  max-height: calc(100vh - 32px); overflow-y: auto;
+  max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0, 10, 30, 0.45); text-align: center;
 }
 h2 { margin: 0 0 12px; font-family: var(--font-display); font-weight: 400; font-size: 30px; letter-spacing: 0.02em; text-wrap: balance; }
@@ -268,7 +291,6 @@ kbd {
   .tbtn.steer { width: 72px; height: 72px; }
   .tbtn.jump { width: 84px; height: 84px; }
   .tbtn.small { width: 60px; height: 60px; }
-  #sound-hint { top: 44%; }
 }
 @media (max-width: 480px) {
   .mode .m-desc { font-size: 12px; }
