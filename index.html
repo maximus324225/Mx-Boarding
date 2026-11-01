@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>MX Boarding</title>
+    <meta name="theme-color" content="#0d1b33" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Saira:wght@400;600;700;800&display=swap" rel="stylesheet" />
+    <!-- Start-Absicherung: zeigt verständliche Fehlermeldungen statt eines leeren Bildschirms -->
+    <script>
+      (function () {
+        var shown = false;
+        function deviceInfo() {
+          var gl2 = false, gpu = '';
+          try {
+            var g = document.createElement('canvas').getContext('webgl2');
+            gl2 = !!g;
+            if (g) {
+              var ext = g.getExtension('WEBGL_debug_renderer_info');
+              gpu = ext ? g.getParameter(ext.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER);
+              var lose = g.getExtension('WEBGL_lose_context');
+              if (lose) lose.loseContext();
+            }
+          } catch (e) { /* egal */ }
+          return 'WebGL 2: ' + (gl2 ? 'ja' : 'nein') + (gpu ? ' (' + gpu + ')' : '') + '\n' + navigator.userAgent;
+        }
+        window.__mxFatal = function (title, detail) {
+          if (shown) return;
+          shown = true;
+          var show = function () {
+            var boot = document.getElementById('boot');
+            if (boot) boot.hidden = true;
+            var el = document.getElementById('fatal');
+            if (!el) return;
+            document.getElementById('fatal-title').textContent = title;
+            document.getElementById('fatal-detail').textContent = detail || '';
+            document.getElementById('fatal-info').textContent = deviceInfo();
+            el.hidden = false;
+          };
+          if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show);
+          else show();
+        };
+        window.__mxSafeReload = function () {
+          try { localStorage.setItem('mx-quality', 'minimal'); } catch (e) { /* egal */ }
+          location.reload();
+        };
+        window.addEventListener('error', function (e) {
+          if (window.__mxReady) return;
+          var where = e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : '';
+          window.__mxFatal('Das Spiel konnte nicht starten', (e.message || 'Unbekannter Fehler') + where);
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          if (window.__mxReady) return;
+          window.__mxFatal('Das Spiel konnte nicht starten', String(e.reason));
+        });
+        document.addEventListener('DOMContentLoaded', function () {
+          try {
+            if (!document.createElement('canvas').getContext('webgl2')) {
+              window.__mxFatal('3D-Grafik nicht verfügbar', 'Dieser Browser stellt kein WebGL 2 bereit. Auf dem iPhone braucht das Spiel iOS 15 oder neuer; der Blockierungsmodus von iOS kann 3D-Grafik ebenfalls abschalten.');
+            }
+          } catch (e) { /* egal */ }
+        });
+        setTimeout(function () {
+          if (!window.__mxReady) window.__mxFatal('Das Spiel startet nicht', 'Nach 25 Sekunden wurde noch kein Bild gezeichnet.');
+        }, 25000);
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-Dv2km8xN.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-ni_HoglD.css">
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="boot"><div class="boot-logo">MX</div><div class="boot-text">Berg wird geladen …</div></div>
+    <div id="fatal" class="overlay" hidden>
+      <div class="panel">
+        <p class="eyebrow">MX Boarding</p>
+        <h2 id="fatal-title">Das Spiel konnte nicht starten</h2>
+        <p class="detail" id="fatal-detail"></p>
+        <div class="stack">
+          <button class="primary" onclick="window.__mxSafeReload()">Mit sparsamer Grafik neu laden</button>
+          <button class="secondary" onclick="location.reload()">Neu laden</button>
+        </div>
+        <p class="tip">Technische Angaben (hilfreich bei der Fehlersuche):</p>
+        <pre id="fatal-info" class="fatal-info"></pre>
+      </div>
+    </div>
+    <div id="vignette"></div>
+
+    <!-- Anzeige während der Fahrt -->
+    <div id="hud" class="hidden">
+      <div class="hud-left">
+        <div class="speed"><span id="speed">0</span><small>km/h</small></div>
+        <div class="lives" id="lives"></div>
+      </div>
+      <div class="hud-center">
+        <div id="timer" class="timer hidden">0:00</div>
+        <div id="subinfo" class="subinfo hidden"></div>
+      </div>
+      <div class="hud-right">
+        <div class="score" id="score-box"><span id="score">0</span><small id="score-unit">Punkte</small></div>
+        <div class="best" id="best-line">Rekord <span id="best">0</span></div>
+      </div>
+      <div class="hud-buttons">
+        <button id="btn-tilt" class="icon mobile-only" title="Neigungssteuerung" aria-label="Neigungssteuerung">📱</button>
+        <button id="btn-cam" class="icon" title="Ansicht wechseln (C)" aria-label="Ansicht wechseln">🎥</button>
+        <button id="btn-music-hud" class="icon" title="Musik an/aus (M)" aria-label="Musik an/aus">🎵</button>
+        <button id="btn-mute" class="icon" title="Geräusche an/aus" aria-label="Geräusche an/aus">🔊</button>
+        <button id="btn-pause" class="icon" title="Pause (Esc)" aria-label="Pause">⏸</button>
+      </div>
+    </div>
+
+    <div id="popup"></div>
+    <div id="countdown" class="hidden"></div>
+
+    <!-- Touch-Steuerung (nur Handy/Tablet) -->
+    <div id="touch" class="hidden">
+      <div class="touch-left">
+        <button data-act="left" class="tbtn steer" aria-label="Links">◀</button>
+        <button data-act="right" class="tbtn steer" aria-label="Rechts">▶</button>
+      </div>
+      <div class="touch-right">
+        <button data-act="brake" class="tbtn small">Bremsen</button>
+        <button data-act="tuck" class="tbtn small">Hocke</button>
+        <button data-act="jump" class="tbtn jump">Sprung</button>
+      </div>
+    </div>
+
+    <!-- Startbildschirm: im Hintergrund läuft die Show-Fahrt -->
+    <div id="start" class="screen">
+      <div class="logo" aria-label="MX Boarding">
+        <div class="logo-mx">MX</div>
+        <div class="logo-boarding">BOARDING</div>
+        <svg class="logo-swoosh" viewBox="0 0 400 40" aria-hidden="true">
+          <defs>
+            <linearGradient id="sw" x1="0" x2="1">
+              <stop offset="0" stop-color="#45a6ff" stop-opacity="0" />
+              <stop offset="0.35" stop-color="#45a6ff" />
+              <stop offset="1" stop-color="#7a4dff" />
+            </linearGradient>
+          </defs>
+          <path d="M10 30 C 120 8, 260 4, 390 14 L 388 20 C 260 12, 130 18, 10 30 Z" fill="url(#sw)" />
+          <circle cx="372" cy="8" r="2.2" fill="#fff" />
+          <circle cx="384" cy="4" r="1.6" fill="#fff" />
+          <circle cx="360" cy="5" r="1.2" fill="#fff" />
+        </svg>
+      </div>
+
+      <div class="screen-middle">
+        <div id="sound-hint">Tippen oder Taste drücken für Musik</div>
+        <div class="rotate-hint">Tipp: Handy quer halten</div>
+      </div>
+
+      <div class="menu-bottom">
+        <div class="modes" id="modes" role="radiogroup" aria-label="Spielmodus"></div>
+        <div class="menu-actions">
+          <button id="btn-start" class="primary">Start</button>
+          <div class="chips">
+            <button id="btn-music" class="chip">🎵 Musik: An</button>
+            <button id="btn-quality" class="chip">Grafik: Hoch</button>
+            <button id="btn-help" class="chip">Steuerung</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Steuerung -->
+    <div id="help" class="overlay hidden">
+      <div class="panel">
+        <h2>Steuerung</h2>
+        <div class="controls desktop-only">
+          <div><span class="keys"><kbd>←</kbd><kbd>→</kbd> <kbd>A</kbd><kbd>D</kbd></span><span>Lenken (Carven gibt Schwung) · in der Luft drehen</span></div>
+          <div><span class="keys"><kbd>↑</kbd> <kbd>W</kbd></span><span>Hocke · in der Luft: Vorwärtssalto</span></div>
+          <div><span class="keys"><kbd>↓</kbd> <kbd>S</kbd></span><span>Bremsen · in der Luft: Rückwärtssalto</span></div>
+          <div><span class="keys"><kbd>Leertaste</kbd></span><span>Halten = aufladen, loslassen = springen</span></div>
+          <div><span class="keys"><kbd>Shift</kbd> <kbd>E</kbd></span><span>Grab in der Luft</span></div>
+          <div><span class="keys"><kbd>C</kbd></span><span>Kamera-Ansicht wechseln</span></div>
+          <div><span class="keys"><kbd>M</kbd></span><span>Musik an/aus</span></div>
+          <div><span class="keys"><kbd>Esc</kbd></span><span>Pause</span></div>
+        </div>
+        <div class="controls mobile-only">
+          <div><span class="keys"><b>◀ ▶</b></span><span>Lenken · in der Luft drehen</span></div>
+          <div><span class="keys"><b>Sprung</b></span><span>Halten = aufladen, loslassen = springen</span></div>
+          <div><span class="keys"><b>Hocke</b></span><span>Schneller · in der Luft: Grab</span></div>
+          <div><span class="keys"><b>Bremsen</b></span><span>Bremsen · in der Luft: Salto</span></div>
+          <div><span class="keys"><b>🎥</b></span><span>Kamera-Ansicht wechseln</span></div>
+          <div><span class="keys"><b>📱</b></span><span>Lenken durch Neigen</span></div>
+        </div>
+        <p class="tip">Lass in der Luft rechtzeitig los: Die Lande-Hilfe dreht Spins und Saltos sauber zu Ende. Über die kleinen Schneeauffahrten kommst du auf Rails und Boxen.</p>
+        <button id="btn-help-close" class="primary">Alles klar</button>
+      </div>
+    </div>
+
+    <div id="pause" class="overlay hidden">
+      <div class="panel">
+        <h2>Pause</h2>
+        <div class="stack">
+          <button id="btn-resume" class="primary">Weiter</button>
+          <button id="btn-restart-pause" class="secondary">Neu starten</button>
+          <button id="btn-menu-pause" class="secondary">Hauptmenü</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="gameover" class="overlay hidden">
+      <div class="panel">
+        <p class="eyebrow" id="over-mode">Freeride</p>
+        <h2 id="over-title">Lauf beendet</h2>
+        <p class="new hidden" id="over-new">Neuer Rekord!</p>
+        <div class="result"><span id="over-score">0</span><small id="over-unit">Punkte</small></div>
+        <p class="detail" id="over-detail"></p>
+        <p class="sub">Rekord: <span id="over-best">0</span></p>
+        <div class="stack">
+          <button id="btn-restart" class="primary">Nochmal</button>
+          <button id="btn-menu-over" class="secondary">Hauptmenü</button>
+        </div>
+      </div>
+    </div>
+
+  </body>
+</html>
